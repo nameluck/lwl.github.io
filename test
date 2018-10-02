@@ -1,0 +1,483 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!-- saved from url=(0028)https://lightdream.xyz/road/ -->
+<html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<link rel="icon" href="https://lightdream.xyz/css/images/favicon.ico">
+<title>小猪闫霜的页面</title> 
+
+<style type="text/css">
+html {
+	overflow:hidden; 
+	-ms-touch-action:none;
+	-ms-content-zooming:none;
+}
+body {
+	position:absolute;
+	margin:0px;
+	padding:0px;
+	background:#fff;
+	width:100%;
+	height:100%;
+}
+#canvas {
+	position:absolute;
+	width:100%;
+	height:100%;
+	background:#fff;
+}
+</style>
+
+
+
+<script type="text/javascript" src="./求索_files/ge1doot.js.下载"></script>
+<script type="text/javascript">
+
+"use strict";
+
+(function () {
+	/* ==== definitions ==== */
+	var diapo = [], layers = [], ctx, pointer, scr, camera, light, fps = 0, quality = [1,2],
+	// ---- poly constructor ----
+	Poly = function (parent, face) {
+		this.parent = parent;
+		this.ctx    = ctx;
+		this.color  = face.fill || false;
+		this.points = [];
+		if (!face.img) {
+			// ---- create points ----
+			for (var i = 0; i < 4; i++) {
+				this.points[i] = new ge1doot.transform3D.Point(
+					parent.pc.x + (face.x[i] * parent.normalZ) + (face.z[i] * parent.normalX),
+					parent.pc.y +  face.y[i],
+					parent.pc.z + (face.x[i] * parent.normalX) + (-face.z[i] * parent.normalZ)
+				);
+			}
+			this.points[3].next = false;
+		}
+	},
+	// ---- diapo constructor ----
+	Diapo = function (path, img, structure) {
+		// ---- create image ----
+		this.img = new ge1doot.transform3D.Image(
+			this, path + img.img, 1, {
+				isLoaded: function(img) {
+					img.parent.isLoaded = true;
+					img.parent.loaded(img);
+				}
+			}
+		);
+		this.visible  = false;
+		this.normalX  = img.nx;
+		this.normalZ  = img.nz;
+		// ---- point center ----
+		this.pc = new ge1doot.transform3D.Point(img.x, img.y, img.z);
+		// ---- target positions ----
+		this.tx = img.x + (img.nx * Math.sqrt(camera.focalLength) * 20);
+		this.tz = img.z - (img.nz * Math.sqrt(camera.focalLength) * 20);
+		// ---- create polygons ----
+		this.poly = [];
+		for (var i = -1, p; p = structure[++i];) {
+			layers[i] = (p.img === true ? 1 : 2);
+			this.poly.push(
+				new Poly(this, p)
+			);
+		}
+	},
+	// ---- init section ----
+	init = function (json) {
+		// draw poly primitive
+		Poly.prototype.drawPoly = ge1doot.transform3D.drawPoly;
+		// ---- init screen ----
+		scr = new ge1doot.Screen({
+			container: "canvas"
+		});
+		ctx = scr.ctx;
+		scr.resize();
+		// ---- init pointer ----
+		pointer = new ge1doot.Pointer({
+			tap: function () {
+				if (camera.over) {
+					if (camera.over === camera.target.elem) {
+						// ---- return to the center ----
+						camera.target.x = 0;
+						camera.target.z = 0;
+						camera.target.elem = false;
+					} else {
+						// ---- goto diapo ----
+						camera.target.elem = camera.over;
+						camera.target.x = camera.over.tx;
+						camera.target.z = camera.over.tz;
+						// ---- adapt tesselation level to distance ----
+						for (var i = 0, d; d = diapo[i++];) {
+							var dx = camera.target.x - d.pc.x;
+							var dz = camera.target.z - d.pc.z;
+							var dist = Math.sqrt(dx * dx + dz * dz);
+							var lev = (dist > 1500) ? quality[0] : quality[1];
+							d.img.setLevel(lev);
+						}
+					}
+				}
+			}
+		});
+		// ---- init camera ----
+		camera = new ge1doot.transform3D.Camera({
+			focalLength: Math.sqrt(scr.width) * 10,
+			easeTranslation: 0.025,
+			easeRotation: 0.06,
+			disableRz: true
+		}, {
+			move: function () {
+				this.over = false;
+				// ---- rotation ----
+				if (pointer.isDraging) {
+					this.target.elem = false;
+					this.target.ry = -pointer.Xi * 0.01;
+					this.target.rx = (pointer.Y - scr.height * 0.5) / (scr.height * 0.5);
+				} else {
+					if (this.target.elem) {
+						this.target.ry = Math.atan2(
+							this.target.elem.pc.x - this.x,
+							this.target.elem.pc.z - this.z
+						);
+					}
+				}
+				this.target.rx *= 0.9;
+			}
+		});
+		camera.z  = -10000;
+		camera.py = 0;
+		// ---- create images ----
+		for (var i = 0, img; img = json.imgdata[i++];) {
+			diapo.push(
+				new Diapo(
+					json.options.imagesPath, 
+					img, 
+					json.structure
+				)
+			);
+		}	
+		// ---- start engine ---- >>>
+		setInterval(function() {
+			quality = (fps > 50) ? [2,3] : [1,2];
+			fps = 0;
+		}, 1000);
+		run();
+	},
+	// ---- main loop ----
+	run = function () {
+		// ---- clear screen ----
+		ctx.clearRect(0, 0, scr.width, scr.height);
+		// ---- camera ----
+		camera.move();
+		// ---- draw layers ----
+		for (var k = -1, l; l = layers[++k];) {
+			light = false;
+			for (var i = 0, d; d = diapo[i++];) {
+				(l === 1 && d.draw()) || 
+				(d.visible && d.poly[k].draw());
+			}
+		}
+		// ---- cursor ----
+		if (camera.over && !pointer.isDraging) {
+			scr.setCursor("pointer");
+		} else {
+			scr.setCursor("move");
+		}
+		// ---- loop ----
+		fps++;
+		requestAnimFrame(run);
+	};
+	/* ==== prototypes ==== */
+	Poly.prototype.draw = function () {
+		// ---- color light ----
+		var c = this.color;
+		if (c.light || !light) {
+			var s = c.light ? this.parent.light : 1;
+			// ---- rgba color ----
+			light = "rgba(" + 
+				Math.round(c.r * s) + "," +
+				Math.round(c.g * s) + "," + 
+				Math.round(c.b * s) + "," + (c.a || 1) + ")";
+			ctx.fillStyle = light;
+		}
+		// ---- paint poly ----
+		if (!c.light || this.parent.light < 1) {
+			// ---- projection ----
+			for (
+				var i = 0; 
+				this.points[i++].projection();
+			);
+			this.drawPoly();
+			ctx.fill();
+		}
+	}
+	/* ==== image onload ==== */
+	Diapo.prototype.loaded = function (img) {
+		// ---- create points ----
+		var d = [-1,1,1,-1,1,1,-1,-1];
+		var w = img.texture.width  * 0.5;
+		var h = img.texture.height * 0.5;
+		for (var i = 0; i < 4; i++) {
+			img.points[i] = new ge1doot.transform3D.Point(
+				this.pc.x + (w * this.normalZ * d[i]),
+				this.pc.y + (h * d[i + 4]),
+				this.pc.z + (w * this.normalX * d[i])
+			);
+		}
+	}
+	/* ==== images draw ==== */
+	Diapo.prototype.draw = function () {
+		// ---- visibility ----
+		this.pc.projection();
+		if (this.pc.Z > -(camera.focalLength >> 1) && this.img.transform3D(true)) {
+			// ---- light ----
+			this.light = 0.5 + Math.abs(this.normalZ * camera.cosY - this.normalX * camera.sinY) * 0.6;
+			// ---- draw image ----
+			this.visible = true;
+			this.img.draw();
+			// ---- test pointer inside ----
+			if (pointer.hasMoved || pointer.isDown) {
+				if (
+					this.img.isPointerInside(
+						pointer.X,
+						pointer.Y
+					)
+				) camera.over = this;
+			}
+		} else this.visible = false;
+		return true;
+	}
+	return {
+		// --- load data ----
+		load : function (data) {
+			window.addEventListener('load', function () {
+				ge1doot.loadJS(
+					"js/imageTransform3D.js",
+					init, data
+				);
+			}, false);
+		}
+	}
+})().load({
+	imgdata:[
+		// north
+		{img:'image/onceYou.jpg', x:-1000, y:0, z:1500, nx:0, nz:1},
+		// east
+		{img:'image/srbmn.jpg', x:1500, y:0, z:1000, nx:-1, nz:0},
+		// south
+		{img:'image/universe.jpg', x:1000, y:0, z:-1500, nx:0, nz:-1},
+		// west
+		{img:'image/BreakAndStandUp.jpg', x:-1500, y:0, z:-1000, nx:1, nz:0},
+	],
+	structure:[
+		{
+			// wall
+			fill: {r:255, g:255, b:255, light:1},
+			x: [-1001,-490,-490,-1001],
+			z: [-500,-500,-500,-500],
+			y: [500,500,-500,-500]
+		},{
+			// wall
+			fill: {r:255, g:255, b:255, light:1},
+			x: [-501,2,2,-500],
+			z: [-500,-500,-500,-500],
+			y: [500,500,-500,-500]
+		},{
+			// wall
+			fill: {r:255, g:255, b:255, light:1},
+			x: [0,502,502,0],
+			z: [-500,-500,-500,-500],
+			y: [500,500,-500,-500]
+		},{
+			// wall
+			fill: {r:255, g:255, b:255, light:1},
+			x: [490,1002,1002,490],
+			z: [-500,-500,-500,-500],
+			y: [500,500,-500,-500]
+		},{
+			// shadow
+			fill: {r:0, g:0, b:0, a:0.2},
+			x: [-420,420,420,-420],
+			z: [-500,-500,-500,-500],
+			y: [150, 150,-320,-320]
+		},{
+			// shadow
+			fill: {r:0, g:0, b:0, a:0.2},
+			x: [-20,20,20,-20],
+			z: [-500,-500,-500,-500],
+			y: [250, 250,150,150]
+		},{
+			// shadow
+			fill: {r:0, g:0, b:0, a:0.2},
+			x: [-20,20,20,-20],
+			z: [-500,-500,-500,-500],
+			y: [-320, -320,-500,-500]
+		},{
+			// shadow
+			fill: {r:0, g:0, b:0, a:0.2},
+			x: [-20,20,10,-10],
+			z: [-500,-500,-100,-100],
+			y: [-500, -500,-500,-500]
+		},{
+			// base
+			fill: {r:32, g:32, b:32},
+			x: [-50,50,50,-50],
+			z: [-150,-150,-50,-50],
+			y: [-500,-500,-500,-500]
+		},{
+			// support
+			fill: {r:16, g:16, b:16},
+			x: [-10,10,10,-10],
+			z: [-100,-100,-100,-100],
+			y: [300,300,-500,-500]
+		},{
+			// frame
+			fill: {r:255, g:255, b:255},
+			x: [-320,-320,-320,-320],
+			z: [0,-20,-20,0],
+			y: [-190,-190,190,190]
+		},{
+			// frame
+			fill: {r:255, g:255, b:255},
+			x: [320,320,320,320],
+			z: [0,-20,-20,0],
+			y: [-190,-190,190,190]
+		},
+		{img:true},
+		{
+			// ceilingLight
+			fill: {r:255, g:128, b:0},
+			x: [-50,50,50,-50],
+			z: [450,450,550,550],
+			y: [500,500,500,500]
+		},{
+			// groundLight
+			fill: {r:255, g:128, b:0},
+			x: [-50,50,50,-50],
+			z: [450,450,550,550],
+			y: [-500,-500,-500,-500]
+		}
+	],
+	options:{
+		imagesPath: ""
+	}
+});
+</script>
+
+<script src="./求索_files/imageTransform3D.js.下载"></script></head> 
+<body>
+<div style="text-align:center;clear:both;">
+<script>
+//宇宙特效
+"use strict";
+var canvas = document.getElementById('canvas'),
+  ctx = canvas.getContext('2d'),
+  w = canvas.width = window.innerWidth,
+  h = canvas.height = window.innerHeight,
+
+  hue = 217,
+  stars = [],
+  count = 0,
+  maxStars = 1300;//星星数量
+
+var canvas2 = document.createElement('canvas'),
+  ctx2 = canvas2.getContext('2d');
+canvas2.width = 100;
+canvas2.height = 100;
+var half = canvas2.width / 2,
+  gradient2 = ctx2.createRadialGradient(half, half, 0, half, half, half);
+gradient2.addColorStop(0.025, '#CCC');
+gradient2.addColorStop(0.1, 'hsl(' + hue + ', 61%, 33%)');
+gradient2.addColorStop(0.25, 'hsl(' + hue + ', 64%, 6%)');
+gradient2.addColorStop(1, 'transparent');
+
+ctx2.fillStyle = gradient2;
+ctx2.beginPath();
+ctx2.arc(half, half, half, 0, Math.PI * 2);
+ctx2.fill();
+
+// End cache
+
+function random(min, max) {
+  if (arguments.length < 2) {
+    max = min;
+    min = 0;
+  }
+
+  if (min > max) {
+    var hold = max;
+    max = min;
+    min = hold;
+  }
+
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function maxOrbit(x, y) {
+  var max = Math.max(x, y),
+    diameter = Math.round(Math.sqrt(max * max + max * max));
+  return diameter / 2;
+  //星星移动范围，值越大范围越小，
+}
+
+var Star = function() {
+
+  this.orbitRadius = random(maxOrbit(w, h));
+  this.radius = random(60, this.orbitRadius) / 8; 
+  //星星大小
+  this.orbitX = w / 2;
+  this.orbitY = h / 2;
+  this.timePassed = random(0, maxStars);
+  this.speed = random(this.orbitRadius) / 50000; 
+  //星星移动速度
+  this.alpha = random(2, 10) / 10;
+
+  count++;
+  stars[count] = this;
+}
+
+Star.prototype.draw = function() {
+  var x = Math.sin(this.timePassed) * this.orbitRadius + this.orbitX,
+    y = Math.cos(this.timePassed) * this.orbitRadius + this.orbitY,
+    twinkle = random(10);
+
+  if (twinkle === 1 && this.alpha > 0) {
+    this.alpha -= 0.05;
+  } else if (twinkle === 2 && this.alpha < 1) {
+    this.alpha += 0.05;
+  }
+
+  ctx.globalAlpha = this.alpha;
+  ctx.drawImage(canvas2, x - this.radius / 2, y - this.radius / 2, this.radius, this.radius);
+  this.timePassed += this.speed;
+}
+
+for (var i = 0; i < maxStars; i++) {
+  new Star();
+}
+
+function animation() {
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 0.5; //尾巴
+  ctx.fillStyle = 'hsla(' + hue + ', 64%, 6%, 2)';
+  ctx.fillRect(0, 0, w, h)
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (var i = 1, l = stars.length; i < l; i++) {
+    stars[i].draw();
+  };
+
+  window.requestAnimationFrame(animation);
+}
+
+animation();
+</script>
+<script src="./求索_files/gg_bd_ad_720x90.js.下载" type="text/javascript"></script>
+<script src="./求索_files/follow.js.下载" type="text/javascript"></script>
+</div>
+
+<canvas id="canvas" width="1366" height="612">你的浏览器不支持HTML5画布技术，请使用谷歌浏览器。</canvas>
+
+
+
+</body></html>
